@@ -1,0 +1,110 @@
+//#include <Arduino.h> uncomment if using IDE other than Arduino
+
+#include <SPI.h>
+#include <MFRC522.h>
+
+#define SSPin 53 //define sda pin
+#define RSTPin 5 //define reset pin
+
+int redPin = 8; //pin connected to red cathode of RGB LED
+int greenPin = 9; //pin connected to green cathode of RGB LED
+int bluePin = 10; //pin connected to blue cathode of RGB LED
+
+String readCard[4]; //array for storing the UID of the card, 4 is the size because it will store 4 hexadecimal values but convert to string for easy identity checking later on
+
+MFRC522 mfrc522(SSPin, RSTPin); //create instance of mfrc522 class
+MFRC522::MIFARE_Key key;        //create key structure used to store card info
+
+//custom color writer func for rbg led
+void RGBColorPicker(int redValue, int greenValue, int blueValue) { //3 parameters, red, green, blue value are used for writing the different color values to make a single color to display on the LED
+  analogWrite(redPin, redValue); //write specific value for red aspect of the RGB LED
+  analogWrite(greenPin, greenValue); //write specific value for green aspect of the RGB LED
+  analogWrite(bluePin, blueValue); //write specific value for blue aspect of the RGB LED
+}
+
+//reads card uid stores in string
+String readCardUID(String UIDToRead) { //parameter: UIDToRead used to pass a string in which we want to store the UID
+  for (int i = 0; i < mfrc522.uid.size; i++){ // create a loop to go through the UID, for which the end of the reading is defined by the size
+    readCard[i] = String(mfrc522.uid.uidByte[i]); //mfrc522.uid.uidByte = an array containing the entire uid for our card but we can only take it out one byte at a time; convert to string so we can store it in our redCard array
+    UIDToRead = UIDToRead + readCard[i]; //continuously concatanate the read byte into our passed string, UIDToRead
+  }
+  return(UIDToRead);
+}
+
+//reveals secret message for user
+void revealMessage(String secondReadUID){ //stores secondReadUID parameter in String form to eventually call readCard function with that parameter
+  while(true){ //create initial loop
+    if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()){ //checks to see if card is available to read
+      if (readCardUID(secondReadUID) == "11412524529"){ //authorizing the UID
+        Serial.println("secret message"); //example secret message
+        break; //escape condition
+      }
+      else{ //if the read UID is not the one specified above:
+        Serial.println("Who are you?"); //print message
+        RGBColorPicker(255,0,0); //turn RGB LED on full red
+        break; //escape condition
+      }
+    }
+  }
+}
+
+void setup() {
+  // put your setup code here, to run once:
+  
+  //define RGB LED outputs
+  pinMode(redPin, OUTPUT);
+  pinMode(greenPin, OUTPUT);
+  pinMode(bluePin, OUTPUT);
+  
+  RGBColorPicker(0,0,255); //initialize our RGB LED at color blue
+  Serial.begin(9600); //begin serial monitor
+  SPI.begin(); //begin SPI bus
+
+  mfrc522.PCD_Init(); //initialize mfrc522 card
+  for (byte i = 0; i < 6; i++){
+    key.keyByte[i] = 0xFF; //set key security id values to 0xFF across the board
+  }
+  Serial.println("Scan: ");
+}
+
+void loop() {
+  // put your main code here, to run repeatedly:
+  
+  String UID = ""; //first read
+  String SecondRead = ""; //second read
+  
+  // if new card is not present rerun loop
+  if (!mfrc522.PICC_IsNewCardPresent()){
+    return;
+  }
+
+  //select card to read
+  if (!mfrc522.PICC_ReadCardSerial()){
+    return;
+  }
+
+  Serial.println("\nCard found");
+  UID = readCardUID(UID); //call the readCardUID function and store it in UID variable
+  if (UID == "11412524529"){ // Checks for the correct card; "11412524529" because this is the String form of the decimal coonversion of the byte array
+    Serial.print("UID: "); Serial.println(UID);
+    RGBColorPicker(0,255,0); //set color to green
+    Serial.println("Access Granted");
+    Serial.println("Scan card for message: "); //scan card for secret message
+    delay(500);
+    revealMessage(SecondRead); //calls revealMessage function, storing the second read of the UID into variable SecondRead
+  }
+  
+  else if (UID == "2517918627"){ //Incorrect card if UID = 2517918627
+    Serial.print("UID: "); Serial.println(UID);
+    RGBColorPicker(255,0,0);
+    Serial.println("Access Denied");
+  }
+  else {
+    RGBColorPicker(0,0,255);
+  }
+
+  mfrc522.PICC_HaltA(); //stops reading
+  delay(2000); // 2 second delay
+  Serial.println("\nScan: "); //end of loop -> prompts user to scan again
+  RGBColorPicker(0,0,255);
+}
